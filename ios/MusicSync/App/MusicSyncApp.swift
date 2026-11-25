@@ -15,6 +15,7 @@ struct MusicSyncApp: App {
         let player = AudioPlayer()
         let sync = SyncEngine(store: store, settings: settings)
         store.onTracksChanged = { [weak player] byId in player?.libraryChanged(byId) }
+        store.onTracksRelocated = { [weak player] mapping in player?.tracksRelocated(mapping) }
         _settings = State(initialValue: settings)
         _store = State(initialValue: store)
         _player = State(initialValue: player)

@@ -65,6 +65,7 @@ final class SyncEngine {
 
     func start(confirmDeletions: Bool = false) {
         guard !isBusy else { return }
+        phase = .connecting  // 連打で二重に開始しないよう、ここで同期的に状態を変える
         task = Task { await run(confirmDeletions: confirmDeletions) }
     }
 
@@ -138,8 +139,7 @@ final class SyncEngine {
             var summary = Summary()
 
             // 3) 移動の付け替え・削除（先に空き容量を作る）・タグ更新
-            store.relocate(plan.relocations)
-            summary.updated += plan.relocations.count
+            summary.updated += store.relocate(plan.relocations)
             store.remove(plan.deletions)
             summary.deleted = plan.deletions.count
             store.upsert(plan.metadataUpdates)
@@ -212,6 +212,8 @@ final class SyncEngine {
         var pending: [Track] = []
         var lastFlush = Date()
 
+        // 中止・エラー時もダウンロード済みの曲は必ず登録する
+        defer { store.upsert(pending) }
         try await withThrowingTaskGroup(of: DownloadOutcome.self) { group in
             var iterator = tracks.makeIterator()
             func addNext() -> Bool {
@@ -243,7 +245,6 @@ final class SyncEngine {
                 _ = addNext()
             }
         }
-        store.upsert(pending)
         return (ok, failed)
     }
 

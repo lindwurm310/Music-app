@@ -124,6 +124,13 @@ public struct PlayQueue: Equatable, Sendable {
         return byId[wasPlaying.id] == nil
     }
 
+    /// 曲 ID の付け替え（PC でのフォルダ移動）。位置や再生中の曲は変えない
+    public mutating func remap(_ mapping: [String: Track]) {
+        guard !mapping.isEmpty else { return }
+        original = original.map { mapping[$0.id] ?? $0 }
+        items = items.map { mapping[$0.id] ?? $0 }
+    }
+
     public mutating func clear() {
         original = []; items = []; index = 0; isShuffled = false
     }

@@ -156,7 +156,9 @@ struct AlbumDetailView: View {
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            Button { addAlbum = true } label: { Label("プレイリストに追加", systemImage: "text.badge.plus") }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { addAlbum = true } label: { Label("プレイリストに追加", systemImage: "text.badge.plus") }
+            }
         }
         .sheet(item: $addToPlaylist) { AddToPlaylistSheet(trackIds: [$0.id]) }
         .sheet(isPresented: $addAlbum) { AddToPlaylistSheet(trackIds: album.tracks.map(\.id)) }

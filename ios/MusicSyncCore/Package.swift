@@ -9,6 +9,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "MusicSyncCore"),
-        .testTarget(name: "MusicSyncCoreTests", dependencies: ["MusicSyncCore"]),
+        .testTarget(name: "MusicSyncCoreTests", dependencies: ["MusicSyncCore"],
+                    resources: [.copy("Fixtures")]),
     ]
 )

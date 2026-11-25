@@ -84,6 +84,20 @@ final class PlayQueueTests: XCTestCase {
         XCTAssertTrue(q.isEmpty)
     }
 
+    func testRemapKeepsPositionThenReconcileKeepsTrack() {
+        var q = PlayQueue()
+        q.start(tracks, at: 2)
+        let moved = Track(id: "3b", title: "T3")
+        q.remap(["3": moved])
+        XCTAssertEqual(q.current?.id, "3b")
+        var byId = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
+        byId["3"] = nil
+        byId["3b"] = moved
+        XCTAssertFalse(q.reconcile(with: byId))
+        XCTAssertEqual(q.current?.id, "3b")
+        XCTAssertEqual(q.items.count, 5)
+    }
+
     func testReconcileWithDuplicates() {
         var q = PlayQueue()
         q.start([tracks[0], tracks[1], tracks[0]], at: 2)

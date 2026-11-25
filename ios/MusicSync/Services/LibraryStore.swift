@@ -28,6 +28,8 @@ final class LibraryStore {
 
     /// 曲が追加・削除されたときに呼ばれる（プレイヤーのキュー追従用）
     @ObservationIgnored var onTracksChanged: (([String: Track]) -> Void)?
+    /// 曲が移動（ID 変更）されたとき {旧 ID: 新しい曲}。再生キューを付け替えるため
+    @ObservationIgnored var onTracksRelocated: (([String: Track]) -> Void)?
     /// プレイリストを端末で編集したときに呼ばれる（サーバーへの送信用）
     @ObservationIgnored var onPlaylistsEdited: (() -> Void)?
 
@@ -141,9 +143,12 @@ final class LibraryStore {
     }
 
     /// PC で移動された曲のファイルを付け替える（失敗した曲は次回の同期でダウンロードされる）
-    func relocate(_ items: [SyncPlan.Relocation]) {
-        guard !items.isEmpty else { return }
+    /// - Returns: 付け替えに成功した曲数
+    @discardableResult
+    func relocate(_ items: [SyncPlan.Relocation]) -> Int {
+        guard !items.isEmpty else { return 0 }
         let fm = FileManager.default
+        var moved: [String: Track] = [:]
         for r in items {
             guard let old = tracksById.removeValue(forKey: r.fromId) else { continue }
             let src = Paths.audioURL(for: old), dst = Paths.audioURL(for: r.track)
@@ -151,11 +156,20 @@ final class LibraryStore {
                 if fm.fileExists(atPath: dst.path) { try fm.removeItem(at: dst) }
                 try fm.moveItem(at: src, to: dst)
                 tracksById[r.track.id] = r.track
+                moved[r.fromId] = r.track
             } catch {
                 try? fm.removeItem(at: src)
             }
         }
+        if !moved.isEmpty {
+            // 端末のプレイリストの参照も付け替える（更新時刻は変えない＝サーバー側の変更を優先）
+            for i in allPlaylists.indices {
+                allPlaylists[i].trackIds = allPlaylists[i].trackIds.map { moved[$0]?.id ?? $0 }
+            }
+            onTracksRelocated?(moved)
+        }
         tracksDidChange()
+        return moved.count
     }
 
     /// サーバーでマージ済みのプレイリストを反映（同期中に端末で編集された分は LWW で残す）
@@ -217,8 +231,12 @@ final class LibraryStore {
     }
 
     func addTracks(_ trackIds: [String], to id: String) {
-        guard !trackIds.isEmpty else { return }
-        editPlaylist(id) { $0.trackIds.append(contentsOf: trackIds) }
+        guard let existing = playlist(id) else { return }
+        // 既に入っている曲は重複させない（同じ曲を 2 回入れたいときはプレイリスト内で操作）
+        var seen = Set(existing.trackIds)
+        let newIds = trackIds.filter { seen.insert($0).inserted }
+        guard !newIds.isEmpty else { return }
+        editPlaylist(id) { $0.trackIds.append(contentsOf: newIds) }
     }
 
     /// 表示中の行（端末に存在する曲だけの並び）の位置で削除する

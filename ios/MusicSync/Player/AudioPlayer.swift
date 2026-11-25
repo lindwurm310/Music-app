@@ -121,6 +121,11 @@ final class AudioPlayer {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
+    /// PC で移動された曲（ID が変わった曲）をキュー内で付け替える
+    func tracksRelocated(_ mapping: [String: Track]) {
+        queue.remap(mapping)
+    }
+
     /// 同期で曲が削除・更新されたときにキューを追従させる
     func libraryChanged(_ byId: [String: Track]) {
         guard !queue.isEmpty else { return }
@@ -177,9 +182,10 @@ final class AudioPlayer {
         updateNowPlaying()
         Task { [weak self] in
             // タグの再生時間が不正確なことがあるので実際の長さで上書き
-            if let d = try? await item.asset.load(.duration).seconds, d.isFinite, d > 0 {
-                self?.duration = d
-                self?.updateNowPlaying()
+            if let d = try? await item.asset.load(.duration).seconds, d.isFinite, d > 0,
+               let self, self.player.currentItem === item {  // 曲送り後の古い結果は無視
+                self.duration = d
+                self.updateNowPlaying()
             }
         }
     }
