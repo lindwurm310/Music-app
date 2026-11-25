@@ -63,6 +63,26 @@ final class SyncPlannerTests: XCTestCase {
         XCTAssertTrue(plan.requiresDeletionConfirmation)
     }
 
+    func testMovedFileIsRelocatedNotRedownloaded() {
+        let local = (0..<20).map { t("old\($0)", sha: "h\($0)") }
+        let remote = (0..<20).map { t("new\($0)", sha: "h\($0)") } + [t("fresh", sha: "zz")]
+        let plan = SyncPlanner.plan(remote: remote, local: local,
+                                    presentFiles: Set(local.map(\.id)), presentArtwork: [])
+        XCTAssertEqual(plan.relocations.count, 20)
+        XCTAssertEqual(plan.relocations.first { $0.fromId == "old3" }?.track.id, "new3")
+        XCTAssertEqual(plan.downloads.map(\.id), ["fresh"])
+        XCTAssertTrue(plan.deletions.isEmpty)
+        XCTAssertFalse(plan.requiresDeletionConfirmation)  // フォルダ名変更で確認ダイアログを出さない
+    }
+
+    func testRelocationNeedsLocalFile() {
+        let plan = SyncPlanner.plan(remote: [t("new", sha: "h")], local: [t("old", sha: "h")],
+                                    presentFiles: [], presentArtwork: [])
+        XCTAssertTrue(plan.relocations.isEmpty)
+        XCTAssertEqual(plan.downloads.map(\.id), ["new"])
+        XCTAssertEqual(plan.deletions, ["old"])
+    }
+
     func testDuplicateRemoteIdsIgnored() {
         let plan = SyncPlanner.plan(remote: [t("a"), t("a")], local: [], presentFiles: [], presentArtwork: [])
         XCTAssertEqual(plan.downloads.count, 1)

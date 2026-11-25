@@ -84,7 +84,7 @@ struct SyncView: View {
                 Button("中止", role: .destructive) { sync.cancel() }
             case .finished(let summary):
                 Label(summary.text, systemImage: summary.failed > 0 ? "exclamationmark.triangle" : "checkmark.circle")
-                    .foregroundStyle(summary.failed > 0 ? .orange : .green)
+                    .foregroundStyle(summary.failed > 0 ? Color.orange : Color.green)
                 syncButton
             case .failed(let message):
                 Label(message, systemImage: "xmark.octagon").foregroundStyle(.red)

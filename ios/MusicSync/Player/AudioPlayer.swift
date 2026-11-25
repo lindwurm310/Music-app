@@ -17,7 +17,7 @@ final class AudioPlayer {
     var repeatMode: RepeatMode { queue.repeatMode }
     var isShuffled: Bool { queue.isShuffled }
 
-    @ObservationIgnored private let player = AVPlayer()
+    private let player = AVPlayer()
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var notificationTokens: [NSObjectProtocol] = []

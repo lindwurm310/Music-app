@@ -45,6 +45,7 @@ struct ArtworkView: View {
     var cornerRadius: CGFloat = 6
 
     @State private var image: UIImage?
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         ZStack {
@@ -63,7 +64,7 @@ struct ArtworkView: View {
         .accessibilityHidden(true)
         .task(id: artworkId) {
             guard let artworkId else { image = nil; return }
-            let pixel = Int(size * UIScreen.main.scale)
+            let pixel = Int(size * displayScale)
             let maxPixel: Int? = pixel >= 400 ? nil : pixel
             image = await Task.detached(priority: .utility) {
                 ArtworkCache.shared.image(for: artworkId, maxPixel: maxPixel)

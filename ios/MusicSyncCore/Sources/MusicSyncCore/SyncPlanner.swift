@@ -2,12 +2,19 @@ import Foundation
 
 /// サーバーの manifest と端末の状態から「何をすべきか」を計算する（副作用なし）。
 public struct SyncPlan: Equatable, Sendable {
+    /// PC でフォルダ移動・名前変更された曲（内容は同じ）。再ダウンロードせず端末内で付け替える
+    public struct Relocation: Equatable, Sendable {
+        public var fromId: String
+        public var track: Track
+    }
+
     /// 新規・内容が変わった曲（ダウンロードが必要）
     public var downloads: [Track] = []
     /// ファイルは同じでタグやアートだけ変わった曲
     public var metadataUpdates: [Track] = []
     /// サーバーから消えた曲（端末から削除）
     public var deletions: [String] = []
+    public var relocations: [Relocation] = []
     /// 取得が必要なアートワーク ID
     public var artworkDownloads: [String] = []
     /// どの曲からも参照されなくなったアートワーク ID
@@ -15,7 +22,7 @@ public struct SyncPlan: Equatable, Sendable {
 
     public var totalDownloadBytes: Int64 { downloads.reduce(0) { $0 + $1.size } }
     public var isEmpty: Bool {
-        downloads.isEmpty && metadataUpdates.isEmpty && deletions.isEmpty
+        downloads.isEmpty && metadataUpdates.isEmpty && deletions.isEmpty && relocations.isEmpty
             && artworkDownloads.isEmpty && artworkDeletions.isEmpty
     }
 
@@ -52,8 +59,29 @@ public enum SyncPlanner {
             }
         }
 
-        plan.deletions = local.map(\.id).filter { !remoteIds.contains($0) }
-        plan.deletions = Array(Set(plan.deletions)).sorted()
+        let deletions = Array(Set(local.map(\.id).filter { !remoteIds.contains($0) })).sorted()
+
+        // 消える曲と同じ内容（SHA-256）の新曲があれば、ファイルを付け替えるだけで済む
+        var deletableByHash: [String: [String]] = [:]
+        for id in deletions where presentFiles.contains(id) {
+            if let sha = localById[id]?.sha256, !sha.isEmpty { deletableByHash[sha, default: []].append(id) }
+        }
+        var relocatedFrom = Set<String>()
+        var relocations: [SyncPlan.Relocation] = []
+        var downloads: [Track] = []
+        for track in plan.downloads {
+            if var candidates = deletableByHash[track.sha256], !candidates.isEmpty {
+                let from = candidates.removeFirst()
+                deletableByHash[track.sha256] = candidates
+                relocatedFrom.insert(from)
+                relocations.append(SyncPlan.Relocation(fromId: from, track: track))
+            } else {
+                downloads.append(track)
+            }
+        }
+        plan.downloads = downloads
+        plan.relocations = relocations
+        plan.deletions = deletions.filter { !relocatedFrom.contains($0) }
 
         let neededArtwork = Set(remote.compactMap(\.artworkId))
         plan.artworkDownloads = neededArtwork.subtracting(presentArtwork).sorted()

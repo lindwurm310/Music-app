@@ -27,11 +27,11 @@ final class LibraryStore {
     private(set) var artists: [Artist] = []
 
     /// 曲が追加・削除されたときに呼ばれる（プレイヤーのキュー追従用）
-    var onTracksChanged: (([String: Track]) -> Void)?
+    @ObservationIgnored var onTracksChanged: (([String: Track]) -> Void)?
     /// プレイリストを端末で編集したときに呼ばれる（サーバーへの送信用）
-    var onPlaylistsEdited: (() -> Void)?
+    @ObservationIgnored var onPlaylistsEdited: (() -> Void)?
 
-    private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
 
     init() {
         Paths.prepare()
@@ -135,6 +135,24 @@ final class LibraryStore {
         for id in ids {
             if let t = tracksById.removeValue(forKey: id) {
                 try? fm.removeItem(at: Paths.audioURL(for: t))
+            }
+        }
+        tracksDidChange()
+    }
+
+    /// PC で移動された曲のファイルを付け替える（失敗した曲は次回の同期でダウンロードされる）
+    func relocate(_ items: [SyncPlan.Relocation]) {
+        guard !items.isEmpty else { return }
+        let fm = FileManager.default
+        for r in items {
+            guard let old = tracksById.removeValue(forKey: r.fromId) else { continue }
+            let src = Paths.audioURL(for: old), dst = Paths.audioURL(for: r.track)
+            do {
+                if fm.fileExists(atPath: dst.path) { try fm.removeItem(at: dst) }
+                try fm.moveItem(at: src, to: dst)
+                tracksById[r.track.id] = r.track
+            } catch {
+                try? fm.removeItem(at: src)
             }
         }
         tracksDidChange()

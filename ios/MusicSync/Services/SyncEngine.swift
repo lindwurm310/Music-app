@@ -50,9 +50,9 @@ final class SyncEngine {
 
     private let store: LibraryStore
     private let settings: ServerSettings
-    private var task: Task<Void, Never>?
-    private var playlistPushTask: Task<Void, Never>?
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var playlistPushTask: Task<Void, Never>?
+    @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private static let maxConcurrentDownloads = 3
 
     init(store: LibraryStore, settings: ServerSettings) {
@@ -137,11 +137,13 @@ final class SyncEngine {
             phase = .syncing
             var summary = Summary()
 
-            // 3) 削除（先に空き容量を作る）・タグ更新
+            // 3) 移動の付け替え・削除（先に空き容量を作る）・タグ更新
+            store.relocate(plan.relocations)
+            summary.updated += plan.relocations.count
             store.remove(plan.deletions)
             summary.deleted = plan.deletions.count
             store.upsert(plan.metadataUpdates)
-            summary.updated = plan.metadataUpdates.count
+            summary.updated += plan.metadataUpdates.count
 
             // 4) 容量チェック
             if let free = Paths.availableCapacity(), plan.totalDownloadBytes > free - 200_000_000 {
