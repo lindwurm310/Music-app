@@ -118,6 +118,8 @@ class ScanResult:
     removed: int = 0
     unchanged: int = 0
     errors: int = 0
+    # フォルダ移動・名前変更で ID が変わった曲 {旧 ID: 新 ID}（内容ハッシュで判定）
+    moved: dict[str, str] = field(default_factory=dict)
 
     @property
     def changed(self) -> bool:
@@ -211,7 +213,7 @@ class Library:
         self._lock = threading.RLock()
         self._tracks: dict[str, Track] = {}
         self._album_art: dict[str, str] = {}
-        self._folder_art_cache: dict[str, tuple[int, str | None]] = {}
+        self._folder_art_cache: dict[tuple[str, int, int], str] = {}
         self.last_scan: float = 0.0
         self._load()
 
@@ -273,28 +275,31 @@ class Library:
                     yield Path(dirpath) / name
 
     def _folder_artwork(self, directory: Path) -> str | None:
-        key = str(directory)
+        """フォルダ画像のアート ID。画像ファイルの (パス, 更新時刻, サイズ) でキャッシュ。"""
+        image = artwork.find_folder_image(directory)
+        if not image:
+            return None
         try:
-            mtime = directory.stat().st_mtime_ns
+            st = image.stat()
         except OSError:
             return None
+        key = (str(image), st.st_mtime_ns, st.st_size)
         cached = self._folder_art_cache.get(key)
-        if cached and cached[0] == mtime:
-            return cached[1]
-        art_id = None
-        image = artwork.find_folder_image(directory)
-        if image:
-            try:
-                art_id = self.store_artwork(image.read_bytes())
-            except OSError:
-                art_id = None
-        self._folder_art_cache[key] = (mtime, art_id)
+        if cached is not None:
+            return cached or None
+        try:
+            art_id = self.store_artwork(image.read_bytes())
+        except OSError:
+            art_id = None
+        self._folder_art_cache[key] = art_id or ""
         return art_id
 
     def scan(self) -> ScanResult:
         with self._lock:
             result = ScanResult()
             seen: set[str] = set()
+            new_ids: list[str] = []
+            dir_art: dict[Path, str | None] = {}
             by_path = {t.path: t for t in self._tracks.values()}
             for path in self.iter_audio_files():
                 rel = path.relative_to(self.root).as_posix()
@@ -306,7 +311,9 @@ class Library:
                     result.errors += 1
                     continue
                 existing = by_path.get(rel) or self._tracks.get(tid)
-                folder_art = self._folder_artwork(path.parent)
+                if path.parent not in dir_art:
+                    dir_art[path.parent] = self._folder_artwork(path.parent)
+                folder_art = dir_art[path.parent]
                 if existing and existing.size == st.st_size and existing.mtime_ns == st.st_mtime_ns:
                     existing.folder_artwork_id = folder_art
                     result.unchanged += 1
@@ -334,10 +341,17 @@ class Library:
                     result.updated += 1
                 else:
                     result.added += 1
-            for tid in list(self._tracks):
-                if tid not in seen:
-                    del self._tracks[tid]
-                    result.removed += 1
+                    new_ids.append(tid)
+            removed = {tid: self._tracks.pop(tid) for tid in list(self._tracks) if tid not in seen}
+            result.removed = len(removed)
+            # 移動検出: 消えた曲と同じ内容の曲が新しく現れたら同一曲とみなす
+            removed_by_hash: dict[str, list[str]] = {}
+            for tid, t in removed.items():
+                removed_by_hash.setdefault(t.sha256, []).append(tid)
+            for tid in new_ids:
+                candidates = removed_by_hash.get(self._tracks[tid].sha256)
+                if candidates:
+                    result.moved[candidates.pop(0)] = tid
             self._resolve_artwork()
             self._save()
             self.last_scan = time.time()

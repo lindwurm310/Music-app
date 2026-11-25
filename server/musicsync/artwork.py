@@ -192,11 +192,17 @@ def _norm(text: str) -> str:
     return "".join(out)
 
 
-def _similar(a: str, b: str) -> bool:
+def _similar(a: str, b: str, strict: bool = False) -> bool:
+    """表記ゆれを吸収して比較。部分一致は長さが近い場合のみ許可（誤マッチ防止）。"""
     na, nb = _norm(a), _norm(b)
     if not na or not nb:
         return False
-    return na == nb or na in nb or nb in na
+    if na == nb:
+        return True
+    if strict:
+        return False
+    short, long_ = sorted((na, nb), key=len)
+    return short in long_ and len(short) >= 3 and len(short) / len(long_) >= 0.6
 
 
 def search_itunes(artist: str, album: str, http_get: HttpGet) -> bytes | None:
@@ -215,7 +221,8 @@ def search_itunes(artist: str, album: str, http_get: HttpGet) -> bytes | None:
         for item in results:
             name = item.get("collectionName", "")
             item_artist = item.get("artistName", "")
-            if not _similar(name, album):
+            # アーティスト不明のときはアルバム名の完全一致のみ採用
+            if not _similar(name, album, strict=not artist):
                 continue
             if artist and not _similar(item_artist, artist):
                 continue
@@ -247,7 +254,7 @@ def search_musicbrainz(artist: str, album: str, http_get: HttpGet) -> bytes | No
     except (ValueError, UnicodeDecodeError):
         return None
     for rel in releases:
-        if not _similar(rel.get("title", ""), album):
+        if not _similar(rel.get("title", ""), album, strict=not artist):
             continue
         mbid = rel.get("id")
         if not mbid:
@@ -258,19 +265,56 @@ def search_musicbrainz(artist: str, album: str, http_get: HttpGet) -> bytes | No
     return None
 
 
+class RateLimitedHttp:
+    """ホストごとに最小間隔を空けて呼ぶ（iTunes は約 20 回/分、MusicBrainz は 1 回/秒の制限）。"""
+
+    DEFAULT_INTERVALS = {
+        "itunes.apple.com": 3.1,
+        "musicbrainz.org": 1.1,
+        "coverartarchive.org": 0.5,
+    }
+
+    def __init__(self, http_get: HttpGet, intervals: dict[str, float] | None = None,
+                 sleep: Callable[[float], None] = time.sleep):
+        self.http_get = http_get
+        self.intervals = self.DEFAULT_INTERVALS if intervals is None else intervals
+        self.sleep = sleep
+        self._last: dict[str, float] = {}
+        self.responses = 0  # 何らかの応答があった回数（ネットワーク断の判定用）
+
+    def __call__(self, url: str) -> bytes | None:
+        host = urllib.parse.urlsplit(url).hostname or ""
+        interval = self.intervals.get(host, 0.0)
+        if interval:
+            wait = self._last.get(host, 0.0) + interval - time.monotonic()
+            if wait > 0:
+                self.sleep(wait)
+            self._last[host] = time.monotonic()
+        data = self.http_get(url)
+        if data is not None:
+            self.responses += 1
+        return data
+
+
 class ArtworkFetcher:
-    """見つからなかったアルバムは一定期間再検索しない（ネガティブキャッシュ）。"""
+    """見つからなかったアルバムは一定期間再検索しない（ネガティブキャッシュ）。
+    ネットワークに繋がらなかった場合は「見つからない」と記録しない。"""
 
     RETRY_AFTER = 7 * 24 * 3600
 
     def __init__(self, cache_path: Path, http_get: HttpGet | None = None,
-                 sources: tuple[str, ...] = ("itunes", "musicbrainz")):
+                 sources: tuple[str, ...] = ("itunes", "musicbrainz"),
+                 rate_limits: dict[str, float] | None = None):
         from .storage import read_json
 
         self.cache_path = cache_path
-        self.http_get = http_get or default_http_get
+        # テスト等で http_get を差し替えたときは既定ではレート制限しない
+        if rate_limits is None and http_get is not None:
+            rate_limits = {}
+        self.http_get = RateLimitedHttp(http_get or default_http_get, rate_limits)
         self.sources = sources
         self.misses: dict[str, float] = read_json(cache_path, {})
+        self.offline = False  # 直近の検索でどこからも応答が無かった
 
     def _save(self) -> None:
         from .storage import write_json
@@ -283,6 +327,7 @@ class ArtworkFetcher:
         last_miss = self.misses.get(key)
         if not force and last_miss and time.time() - last_miss < self.RETRY_AFTER:
             return None
+        before = self.http_get.responses
         data = None
         for source in self.sources:
             fn = search_itunes if source == "itunes" else search_musicbrainz
@@ -293,9 +338,12 @@ class ArtworkFetcher:
                 data = None
             if data:
                 break
+        self.offline = self.http_get.responses == before
         if data:
             self.misses.pop(key, None)
-        else:
+        elif not self.offline:
             self.misses[key] = time.time()
+        else:
+            return None
         self._save()
         return data

@@ -57,7 +57,7 @@ def test_itunes_bad_json_and_non_image():
     assert artwork.search_itunes("宇多田ヒカル", "First Love", http) is None
 
 
-def test_musicbrainz_fallback():
+def test_musicbrainz_fallback(tmp_path):
     img = make_image()
     mb = {"releases": [{"id": "abc-123", "title": "Kid A"}]}
     http = fake_http({
@@ -65,15 +65,12 @@ def test_musicbrainz_fallback():
         "https://musicbrainz.org/": json.dumps(mb).encode(),
         "https://coverartarchive.org/release/abc-123/": img,
     })
-    f = artwork.ArtworkFetcher.__new__(artwork.ArtworkFetcher)
-    f.http_get, f.sources, f.misses = http, ("itunes", "musicbrainz"), {}
-    f.cache_path = None
-    f._save = lambda: None
+    f = artwork.ArtworkFetcher(tmp_path / "m.json", http_get=http)
     assert f.fetch("k", "Radiohead", "Kid A") == img
 
 
 def test_negative_cache(tmp_path):
-    http = fake_http({})
+    http = fake_http({"https://itunes.apple.com/": b'{"results": []}', "https://musicbrainz.org/": b'{}'})
     f = artwork.ArtworkFetcher(tmp_path / "miss.json", http_get=http)
     assert f.fetch("k", "a", "b") is None
     n = len(http.calls)
@@ -140,3 +137,37 @@ def test_embed_wav_roundtrip(tmp_path):
     img = make_image()
     assert artwork.embed_artwork(p, img)
     assert artwork.extract_embedded(p) == img
+
+
+def test_offline_is_not_recorded_as_miss(tmp_path):
+    http = fake_http({})  # 何も応答しない = ネットワーク断
+    f = artwork.ArtworkFetcher(tmp_path / "m.json", http_get=http)
+    assert f.fetch("k", "a", "b") is None
+    assert f.offline and "k" not in f.misses
+    n = len(http.calls)
+    f.fetch("k", "a", "b")
+    assert len(http.calls) > n  # 次回もちゃんと再検索する
+
+
+def test_similar_rejects_short_substrings():
+    assert not artwork._similar("1", "Number 1 Hits")
+    assert not artwork._similar("Love", "Love Songs Collection Vol. 2")
+    assert artwork._similar("Abbey Road", "Abbey Road (Remastered)")
+    assert not artwork._similar("Abbey Road", "Abbey Road Live", strict=True)
+
+
+def test_itunes_without_artist_requires_exact_album():
+    data = {"results": [{"collectionName": "Greatest Hits 2", "artistName": "X",
+                         "artworkUrl100": "https://img/a/100x100bb.jpg"}]}
+    http = fake_http({"https://itunes.apple.com/": json.dumps(data).encode(), "https://img/": make_image()})
+    assert artwork.search_itunes("", "Greatest Hits", http) is None
+
+
+def test_rate_limiter_spaces_calls():
+    slept = []
+    rl = artwork.RateLimitedHttp(lambda url: b"x", {"itunes.apple.com": 3.0}, sleep=slept.append)
+    rl("https://itunes.apple.com/a")
+    rl("https://itunes.apple.com/b")
+    rl("https://img.example/c")
+    assert len(slept) == 1 and 2.5 < slept[0] <= 3.0
+    assert rl.responses == 3

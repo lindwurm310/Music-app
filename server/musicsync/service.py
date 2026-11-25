@@ -97,6 +97,9 @@ class MusicSyncService:
             result = self.library.scan()
         finally:
             self._scan_lock.release()
+        if result.moved:
+            n = self.playlists.remap_tracks(result.moved)
+            log.info("移動した曲 %d 曲を検出（プレイリスト %d 件を更新）", len(result.moved), n)
         if self.auto_artwork and (result.added or result.updated):
             self.start_background_artwork(embed=self.embed_artwork)
         return result
@@ -130,6 +133,10 @@ class MusicSyncService:
                 report.albums_checked += 1
                 data = self.fetcher.fetch(key, sample.album_artist or sample.artist,
                                           sample.album, force=force)
+                if self.fetcher.offline:
+                    log.warning("アルバムアート検索サーバーに接続できません。後で再試行します")
+                    report.not_found += 1
+                    break
                 if data and self.library.set_album_artwork(key, data):
                     report.found += 1
                     log.info("アルバムアート取得: %s / %s", sample.album_artist or sample.artist, sample.album)

@@ -111,3 +111,33 @@ def test_artwork_path_rejects_traversal(music_dir):
     lib = Library(music_dir)
     assert lib.artwork_path("../../etc/passwd") is None
     assert lib.artwork_path("") is None
+
+
+def test_moved_file_detected_and_playlists_remapped(music_dir):
+    from musicsync.service import MusicSyncService
+
+    p = make_wav(music_dir / "Old" / "song.wav")
+    svc = MusicSyncService(music_dir)
+    svc.refresh(force=True)
+    old_id = svc.library.tracks()[0].id
+    pl = svc.playlists.create("x", [old_id, "other"])
+    (music_dir / "New").mkdir()
+    p.rename(music_dir / "New" / "song.wav")
+    r = svc.refresh(force=True)
+    new_id = svc.library.tracks()[0].id
+    assert new_id != old_id and r.moved == {old_id: new_id}
+    assert svc.playlists.get(pl.id).track_ids == [new_id, "other"]
+
+
+@needs_ffmpeg
+def test_folder_image_replaced_in_place(music_dir):
+    make_audio(music_dir / "Alb" / "1.mp3", album="Alb")
+    cover = music_dir / "Alb" / "cover.jpg"
+    cover.write_bytes(make_image(color=(255, 0, 0)))
+    lib = Library(music_dir)
+    lib.scan()
+    first = lib.tracks()[0].artwork_id
+    cover.write_bytes(make_image(color=(0, 0, 255)))
+    os.utime(cover, ns=(time.time_ns(), time.time_ns() + 10_000_000))
+    lib.scan()
+    assert lib.tracks()[0].artwork_id != first

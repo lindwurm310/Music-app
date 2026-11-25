@@ -192,6 +192,22 @@ class PlaylistStore:
                 self._save()
             return self.all(include_deleted=True)
 
+    def remap_tracks(self, mapping: dict[str, str]) -> int:
+        """曲 ID の付け替え（フォルダ移動時）。変更したプレイリスト数を返す。"""
+        if not mapping:
+            return 0
+        with self._lock:
+            changed = 0
+            for p in self.all():
+                new_ids = [mapping.get(t, t) for t in p.track_ids]
+                if new_ids != p.track_ids:
+                    p.track_ids = new_ids
+                    self._touch(p)
+                    changed += 1
+            if changed:
+                self._save()
+            return changed
+
     def prune_missing_tracks(self, valid_ids: set[str]) -> int:
         """ライブラリから消えた曲をプレイリストから取り除く（明示的な操作）。"""
         with self._lock:

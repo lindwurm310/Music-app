@@ -37,6 +37,8 @@ def cmd_serve(args) -> int:
 
     svc = _service(args, auto_artwork=not args.no_artwork, embed_artwork=args.embed_artwork)
     result = svc.refresh(force=True)
+    if svc.auto_artwork:
+        svc.start_background_artwork(embed=svc.embed_artwork)  # 前回取得できなかった分も再試行
     server = make_server(svc, args.host, args.port)
     port = server.server_address[1]
     print(f"MusicSync {__version__}")
@@ -73,6 +75,8 @@ def cmd_artwork(args) -> int:
     svc.refresh(force=True)
     report = svc.fill_artwork(embed=args.embed, force=args.force, online=not args.offline)
     print(f"検索 {report.albums_checked} 件 / 取得 {report.found} 件 / 見つからず {report.not_found} 件")
+    if svc.fetcher.offline:
+        print("※ 検索サーバーに接続できませんでした。インターネット接続を確認してください。")
     if args.embed:
         print(f"ファイルへ埋め込み: {report.embedded_files} 曲")
     missing = svc.library.albums_missing_artwork()
