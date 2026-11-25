@@ -104,6 +104,11 @@ def find_folder_image(directory: Path) -> Path | None:
     for name in FOLDER_IMAGE_NAMES:
         if name in by_stem:
             return by_stem[name]
+    # Windows Media Player が作る AlbumArt_{GUID}_Large.jpg（隠しファイル属性だが名前は普通）
+    wmp = sorted(p for stem, p in by_stem.items() if stem.startswith("albumart_") and stem.endswith("_large"))
+    if wmp:
+        return wmp[0]
+    images = [p for p in images if not p.stem.lower().startswith("albumart_")]
     # 画像が 1 枚だけならそれをジャケットとみなす
     return images[0] if len(images) == 1 else None
 

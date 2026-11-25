@@ -24,13 +24,29 @@ iTunes / Finder 同期のような写真・アプリ・バックアップなど�
 
 ## 1. PC 側（同期サーバー）
 
-Python 3.10 以上（Windows / macOS / Linux）。
+Python 3.10 以上。**Windows** を主な対象としています（macOS / Linux でも動作）。
+
+### Windows（かんたん）
+
+1. [python.org](https://www.python.org/downloads/) から Python をインストール（**「Add python.exe to PATH」にチェック**）
+2. `server\start-musicsync.bat` を **ダブルクリック**
+   - 初回だけ自動でセットアップ（`server\.venv` に必要なものを入れます）
+   - 既定では「ミュージック」フォルダ（`%USERPROFILE%\Music`）を同期します
+   - 別のフォルダを使う場合: コマンドプロンプトで `start-musicsync.bat "D:\音楽"`
+3. 初回起動時に **Windows Defender ファイアウォール** の確認が出たら、
+   **「プライベート ネットワーク」を許可** してください（許可しないと iPhone から接続できません）
+
+> ファイアウォールを誤って拒否した場合: 「Windows セキュリティ → ファイアウォールとネットワーク保護 →
+> ファイアウォールによるアプリケーションの許可」で `python.exe` のプライベートにチェックを入れます。
+> Wi-Fi のネットワークプロファイルが「パブリック」になっていると接続できないことがあります（「プライベート」に変更）。
+
+### コマンドで使う場合（Windows / macOS / Linux）
 
 ```bash
 cd server
 pip install -e ".[art]"         # Pillow はアートの縮小・PNG→JPEG 変換に使用（推奨）
 
-musicsync serve ~/Music          # 音楽フォルダを指定して起動
+musicsync serve ~/Music          # Windows の例: musicsync serve "%USERPROFILE%\Music"
 ```
 
 起動すると次のように表示されます。iPhone アプリにアドレスとトークンを入力してください。
@@ -87,7 +103,23 @@ iPhone で再生できる形式のみ同期します: `mp3, m4a (AAC/ALAC), m4b,
 
 ## 2. iPhone アプリ
 
-要件: macOS + Xcode 15 以降、iOS 17 以降の iPhone。
+iOS 17 以降の iPhone が対象です。iOS アプリのビルドには Apple の開発ツール（macOS）が必要ですが、
+**Mac が無くても Windows から入れられる** ように、GitHub Actions（クラウドの Mac）でビルドする仕組みを用意しています。
+
+### 方法 A: Windows から入れる（Mac 不要）
+
+1. このリポジトリを GitHub に push すると、Actions の **CI** ワークフローが自動でアプリをビルドします
+   （手動実行: GitHub の Actions タブ → CI → Run workflow）
+2. 完了した実行結果の **Artifacts** から `MusicSync-unsigned-ipa` をダウンロードして展開 → `MusicSync-unsigned.ipa`
+3. Windows に [Sideloadly](https://sideloadly.io/) と Apple 公式の iTunes（Microsoft Store 版でない方が安定）をインストール
+4. iPhone を USB で接続 → Sideloadly に IPA をドラッグ → 自分の Apple ID を入力 → Start
+5. iPhone の「設定 → 一般 → VPN とデバイス管理」で自分の Apple ID を信頼
+6. iOS 16 以降は「設定 → プライバシーとセキュリティ → デベロッパモード」をオンにする必要があります
+
+> 無料の Apple ID で署名したアプリは **7 日間** 有効です。期限が切れたら Sideloadly で再インストールしてください
+> （アプリ内の音楽・プレイリストは残ります）。有料の Apple Developer Program（年額）なら 1 年間有効です。
+
+### 方法 B: Mac + Xcode でビルド
 
 ```bash
 brew install xcodegen
@@ -96,9 +128,7 @@ xcodegen                 # MusicSync.xcodeproj を生成
 open MusicSync.xcodeproj
 ```
 
-1. Xcode で **Signing & Capabilities → Team** に自分の Apple ID を選択（無料アカウントでも実機インストール可。7 日ごとに再インストールが必要）
-2. 必要なら Bundle Identifier を一意な値に変更
-3. iPhone を接続して ▶︎ で実行
+Xcode の **Signing & Capabilities → Team** で自分の Apple ID を選び、iPhone を接続して ▶︎ で実行します。
 
 ### 使い方
 
@@ -130,6 +160,8 @@ PC で編集した内容は次回の同期で iPhone に反映されます。削
 ```bash
 # サーバー（ffmpeg があると MP3/M4A/FLAC の実ファイルでテスト）
 cd server && pip install -e ".[test]" && python -m pytest -q
+
+# GitHub Actions では Windows / Linux でサーバーのテスト、macOS で iOS のテストとビルドを実行します
 
 # iOS のロジック部分（Mac 上で）
 cd ios/MusicSyncCore && swift test

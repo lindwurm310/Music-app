@@ -39,3 +39,22 @@ def test_cli_artwork_offline(music_dir, capsys):
     make_wav(music_dir / "x.wav")
     assert main(["artwork", str(music_dir), "--offline"]) == 0
     assert "検索 0 件" in capsys.readouterr().out
+
+
+def test_storage_replace_retries(tmp_path, monkeypatch):
+    import os
+    from musicsync import storage
+
+    calls = {"n": 0}
+    real = os.replace
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError("locked")
+        return real(src, dst)
+
+    monkeypatch.setattr(storage.os, "replace", flaky)
+    storage.write_json(tmp_path / "x.json", {"a": 1})
+    assert storage.read_json(tmp_path / "x.json", None) == {"a": 1}
+    assert calls["n"] == 3

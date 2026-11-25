@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  server:
+    name: サーバーテスト (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ffmpeg (テスト用の音声ファイル生成)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - run: pip install -e ".[test]"
+      - run: python -m pytest -q
+        env:
+          PYTHONIOENCODING: utf-8
+
+  ios:
+    name: iOS ロジックテスト + アプリビルド
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: MusicSyncCore のテスト
+        working-directory: ios/MusicSyncCore
+        run: swift test
+      - name: Xcode プロジェクト生成
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen
+      - name: アプリをビルド（署名なし）
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project MusicSync.xcodeproj -scheme MusicSync \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -200
+      - name: IPA を作成
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/MusicSync.app Payload/
+          zip -qr MusicSync-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicSync-unsigned-ipa
+          path: ios/MusicSync-unsigned.ipa
+          retention-days: 30

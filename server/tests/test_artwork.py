@@ -171,3 +171,16 @@ def test_rate_limiter_spaces_calls():
     rl("https://img.example/c")
     assert len(slept) == 1 and 2.5 < slept[0] <= 3.0
     assert rl.responses == 3
+
+
+def test_find_wmp_album_art(tmp_path):
+    (tmp_path / "AlbumArtSmall.jpg").write_bytes(b"x")
+    (tmp_path / "AlbumArt_{ABC}_Large.jpg").write_bytes(b"x")
+    (tmp_path / "AlbumArt_{ABC}_Small.jpg").write_bytes(b"x")
+    # 既知の名前 (albumartsmall) が優先
+    assert artwork.find_folder_image(tmp_path).name == "AlbumArtSmall.jpg"
+    (tmp_path / "AlbumArtSmall.jpg").unlink()
+    assert artwork.find_folder_image(tmp_path).name == "AlbumArt_{ABC}_Large.jpg"
+    (tmp_path / "AlbumArt_{ABC}_Large.jpg").unlink()
+    # Small だけ残っても「画像 1 枚」扱いで採用しない（WMP の小サイズは除外）
+    assert artwork.find_folder_image(tmp_path) is None
