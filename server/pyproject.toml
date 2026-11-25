@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "musicsync"
+version = "1.0.0"
+description = "Simple Wi-Fi music sync server for the MusicSync iPhone app"
+requires-python = ">=3.10"
+dependencies = ["mutagen>=1.47"]
+
+[project.optional-dependencies]
+art = ["Pillow>=10"]
+test = ["pytest>=7", "Pillow>=10"]
+
+[project.scripts]
+musicsync = "musicsync.cli:main"
+
+[tool.setuptools]
+packages = ["musicsync"]
+
+[tool.setuptools.package-data]
+musicsync = ["web/*.html"]

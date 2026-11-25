@@ -1,0 +1,48 @@
+name: MusicSync
+options:
+  bundleIdPrefix: com.example.musicsync
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""   # Xcode の Signing & Capabilities で自分のチームを選択
+packages:
+  MusicSyncCore:
+    path: MusicSyncCore
+targets:
+  MusicSync:
+    type: application
+    platform: iOS
+    sources:
+      - path: MusicSync
+    dependencies:
+      - package: MusicSyncCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.musicsync.app
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+    info:
+      path: MusicSync/Info.plist
+      properties:
+        CFBundleDisplayName: MusicSync
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: PC の MusicSync サーバーから音楽を同期するためにローカルネットワークを使用します。
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+schemes:
+  MusicSync:
+    build:
+      targets:
+        MusicSync: all

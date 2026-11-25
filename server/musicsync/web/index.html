@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MusicSync</title>
+<style>
+:root{--bg:#f6f6f8;--card:#fff;--fg:#1c1c1e;--muted:#6e6e73;--line:#e3e3e8;--accent:#fa2d48}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--fg:#f2f2f7;--muted:#98989f;--line:#2c2c2e}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:18px;margin:0}
+.pill{font-size:13px;color:var(--muted)}
+main{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:16px;max-width:1200px;margin:0 auto}
+@media (max-width:760px){main{grid-template-columns:1fr}}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+h2{font-size:15px;margin:4px 4px 10px}
+button,input{font:inherit}
+button{border:0;border-radius:8px;padding:7px 12px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);padding:4px 8px}
+input[type=text],input[type=password],input[type=search]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+ul{list-style:none;margin:0;padding:0}
+.pl li{padding:8px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.pl li.active{background:var(--accent);color:#fff}
+.row{display:flex;gap:8px;margin-bottom:10px}
+.tracks li{display:flex;align-items:center;gap:10px;padding:6px 4px;border-top:1px solid var(--line)}
+.tracks img,.tracks .noart{width:40px;height:40px;border-radius:6px;object-fit:cover;flex:none;background:var(--line)}
+.meta{min-width:0;flex:1}
+.meta div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta .sub{color:var(--muted);font-size:13px}
+#login{max-width:360px;margin:15vh auto;padding:16px}
+.err{color:var(--accent);font-size:13px;min-height:1.2em}
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <section>
+    <h2>MusicSync にログイン</h2>
+    <p class="pill">サーバー起動時に表示されたトークンを入力してください。</p>
+    <form id="loginForm" class="row"><input id="tokenInput" type="password" autocomplete="off" placeholder="トークン"><button>OK</button></form>
+    <div class="err" id="loginErr"></div>
+  </section>
+</div>
+<div id="app" hidden>
+  <header><h1>MusicSync</h1><span class="pill" id="stats"></span><span style="flex:1"></span><button class="ghost" id="rescan">再スキャン</button></header>
+  <main>
+    <section>
+      <h2>プレイリスト</h2>
+      <form id="newPl" class="row"><input id="newPlName" type="text" placeholder="新しいプレイリスト名" maxlength="200"><button>作成</button></form>
+      <ul class="pl" id="playlists"></ul>
+    </section>
+    <section>
+      <div class="row"><h2 id="viewTitle" style="flex:1">すべての曲</h2><button class="ghost" id="renamePl" hidden>名前変更</button><button class="ghost" id="deletePl" hidden>削除</button></div>
+      <div class="row"><input id="search" type="search" placeholder="曲・アーティスト・アルバムを検索"></div>
+      <ul class="tracks" id="tracks"></ul>
+    </section>
+  </main>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let token = "";
+try { token = sessionStorage.getItem("musicsync-token") || ""; } catch (e) {}
+let manifest = { tracks: [], playlists: [] };
+let current = null; // 選択中のプレイリスト ID（null = すべての曲）
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 401) { showLogin("トークンが違います"); throw new Error("unauthorized"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || res.statusText); throw new Error(data.error); }
+  return data;
+}
+
+function showLogin(msg) { $("app").hidden = true; $("login").hidden = false; $("loginErr").textContent = msg || ""; }
+
+async function load() {
+  manifest = await api("GET", "/api/manifest");
+  $("login").hidden = true; $("app").hidden = false;
+  $("stats").textContent = `${manifest.serverName} ・ ${manifest.tracks.length} 曲`;
+  render();
+}
+
+const byId = () => new Map(manifest.tracks.map((t) => [t.id, t]));
+const livePlaylists = () => manifest.playlists.filter((p) => !p.deleted);
+
+function el(tag, props, ...children) {
+  const n = document.createElement(tag);
+  Object.assign(n, props || {});
+  for (const c of children) n.append(c);
+  return n;
+}
+
+function render() {
+  const pls = livePlaylists();
+  if (current && !pls.some((p) => p.id === current)) current = null;
+  const ul = $("playlists"); ul.replaceChildren();
+  ul.append(el("li", { className: current === null ? "active" : "", onclick: () => { current = null; render(); } },
+    el("span", { textContent: "すべての曲" }), el("span", { textContent: String(manifest.tracks.length) })));
+  for (const p of pls) {
+    ul.append(el("li", { className: current === p.id ? "active" : "", onclick: () => { current = p.id; render(); } },
+      el("span", { textContent: p.name }), el("span", { textContent: String(p.trackIds.length) })));
+  }
+  const pl = pls.find((p) => p.id === current);
+  $("viewTitle").textContent = pl ? pl.name : "すべての曲";
+  $("renamePl").hidden = $("deletePl").hidden = !pl;
+  const q = $("search").value.trim().toLowerCase();
+  const map = byId();
+  let list = pl ? pl.trackIds.map((id, i) => ({ t: map.get(id), i })).filter((x) => x.t)
+                : manifest.tracks.map((t) => ({ t, i: -1 }));
+  if (q) list = list.filter(({ t }) => [t.title, t.artist, t.album].join(" ").toLowerCase().includes(q));
+  const tl = $("tracks"); tl.replaceChildren();
+  for (const { t, i } of list.slice(0, 2000)) {
+    const art = t.artworkId
+      ? el("img", { src: `/api/artwork/${t.artworkId}?token=${encodeURIComponent(token)}`, loading: "lazy", alt: "" })
+      : el("div", { className: "noart" });
+    const meta = el("div", { className: "meta" }, el("div", { textContent: t.title }),
+      el("div", { className: "sub", textContent: [t.artist, t.album].filter(Boolean).join(" — ") }));
+    const actions = el("span");
+    if (pl) {
+      actions.append(el("button", { className: "ghost", textContent: "外す", onclick: () => removeAt(pl, i) }));
+    } else if (pls.length) {
+      actions.append(el("button", { className: "ghost", textContent: "＋ 追加", onclick: () => addTo(t) }));
+    }
+    tl.append(el("li", {}, art, meta, actions));
+  }
+}
+
+async function addTo(track) {
+  const pls = livePlaylists();
+  const names = pls.map((p, i) => `${i + 1}: ${p.name}`).join("\n");
+  const ans = prompt(`「${track.title}」を追加するプレイリスト番号:\n${names}`, "1");
+  const p = pls[Number(ans) - 1];
+  if (!p) return;
+  await api("PUT", `/api/playlists/${p.id}`, { trackIds: [...p.trackIds, track.id] });
+  await load();
+}
+
+async function removeAt(pl, index) {
+  const ids = pl.trackIds.slice(); ids.splice(index, 1);
+  await api("PUT", `/api/playlists/${pl.id}`, { trackIds: ids });
+  await load();
+}
+
+$("loginForm").onsubmit = async (e) => {
+  e.preventDefault();
+  token = $("tokenInput").value.trim();
+  try { sessionStorage.setItem("musicsync-token", token); } catch (err) {}
+  try { await load(); } catch (err) {}
+};
+$("newPl").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = $("newPlName").value.trim();
+  if (!name) return;
+  const p = await api("POST", "/api/playlists", { name });
+  $("newPlName").value = ""; current = p.id; await load();
+};
+$("renamePl").onclick = async () => {
+  const p = livePlaylists().find((x) => x.id === current); if (!p) return;
+  const name = prompt("新しい名前", p.name); if (!name) return;
+  await api("PUT", `/api/playlists/${p.id}`, { name }); await load();
+};
+$("deletePl").onclick = async () => {
+  const p = livePlaylists().find((x) => x.id === current); if (!p) return;
+  if (!confirm(`「${p.name}」を削除しますか？`)) return;
+  await api("DELETE", `/api/playlists/${p.id}`); current = null; await load();
+};
+$("rescan").onclick = async () => { await api("POST", "/api/rescan"); await load(); };
+$("search").oninput = render;
+
+if (token) load().catch(() => {}); else showLogin();
+</script>
+</body>
+</html>

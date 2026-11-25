@@ -1,0 +1,38 @@
+{
+ "protocol": 1,
+ "serverVersion": "1.0.0",
+ "serverId": "00000000-0000-0000-0000-000000000000",
+ "serverName": "test-pc",
+ "generatedAt": 1795645676224,
+ "libraryVersion": "32d8be89f22a4f4ef27334fc9e9f154a4cee3408",
+ "tracks": [
+  {
+   "id": "0997b8bce3801c33",
+   "path": "Band/a.mp3",
+   "size": 8654,
+   "sha256": "56a60c6261d8dc3dab0dd1ba2b993685820008745cbc6dcaf4ac97458f83eb04",
+   "title": "夜明け",
+   "artist": "Band",
+   "album": "Record",
+   "albumArtist": "",
+   "trackNumber": 1,
+   "discNumber": 0,
+   "year": 0,
+   "genre": "",
+   "duration": 1.045,
+   "artworkId": null,
+   "fileExtension": "mp3"
+  }
+ ],
+ "playlists": [
+  {
+   "id": "2a1fb73a-375e-40ef-8947-0fccec53c3f8",
+   "name": "ドライブ",
+   "trackIds": [
+    "0997b8bce3801c33"
+   ],
+   "updatedAt": 1795645676224,
+   "deleted": false
+  }
+ ]
+}
